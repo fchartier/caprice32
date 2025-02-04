@@ -21,10 +21,10 @@ RUN apt-get update && apt-get install --no-install-recommends --no-install-sugge
 
 # RUN adduser
 
-WORKDIR /tmp
-RUN wget http://softpres.org/_media/files:ipflib42_linux-x86_64.tar.gz -O /tmp/ipflib42_linux-x86_64.tar.gz
-RUN tar -xf /tmp/ipflib42_linux-x86_64.tar.gz 2>&1 >/dev/null
-RUN cp -r x86_64-linux-gnu-capsimage/include/caps /usr/include
+#WORKDIR /tmp
+#RUN wget http://softpres.org/_media/files:ipflib42_linux-x86_64.tar.gz -O /tmp/ipflib42_linux-x86_64.tar.gz
+#RUN tar -xf /tmp/ipflib42_linux-x86_64.tar.gz 2>&1 >/dev/null
+#RUN cp -r x86_64-linux-gnu-capsimage/include/caps /usr/include
 
 USER 1001:1001
 WORKDIR /home/project
