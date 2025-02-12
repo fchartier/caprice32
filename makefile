@@ -19,26 +19,30 @@ VERSION=latest
 REVISION=0
 
 LAST_BUILD_IN_DEBUG = $(shell [ -e .debug ] && echo 1 || echo 0)
-# If compiling under native windows, set WINE to ""
-WINE = wine
 
 ARCH ?= linux
 
 COMMON_CFLAGS ?= 
 
-ifeq ($(ARCH),msys2_win64)
+ifeq ($(ARCH),win64)
 # Rename main to SDL_main to solve the "undefined reference to `SDL_main'".
 # Do not make an error of old-style-cast on msys2 as the version of GCC used by
 # msys2 on GitHub actions is 13.3 which has a bug and raise it on a cast from
 # zlib.h
 COMMON_CFLAGS = -DWINDOWS -D_POSIX_C_SOURCE=200809L -Wno-error=old-style-cast
-else ifeq ($(ARCH),win64)
+PLATFORM=windows
+else ifeq ($(ARCH),win32)
+COMMON_CFLAGS = -DWINDOWS -D_POSIX_C_SOURCE=200809L -Wno-error=old-style-cast
+PLATFORM=windows
+else ifeq ($(ARCH),old_win64)
 TRIPLE = x86_64-w64-mingw32
 PLATFORM=windows
+VARIANT=old_win
 CAPSIPFDLL=CAPSImg_x64.dll
-else ifeq ($(ARCH),win32)
+else ifeq ($(ARCH),old_win32)
 TRIPLE = i686-w64-mingw32
 PLATFORM=windows
+VARIANT=old_win
 CAPSIPFDLL=CAPSImg.dll
 else ifeq ($(ARCH),linux)
 PLATFORM=linux
@@ -52,23 +56,26 @@ endif
 ifeq ($(PLATFORM),windows)
 TARGET = cap32.exe
 TEST_TARGET = test_runner.exe
-MINGW_PATH = /usr/$(TRIPLE)
-IPATHS = -Isrc/ -Isrc/gui/includes -I$(MINGW_PATH)/include -I$(MINGW_PATH)/include/SDL2 -I$(MINGW_PATH)/include/freetype2
-LIBS = $(MINGW_PATH)/lib/libSDL2.dll.a $(MINGW_PATH)/lib/libSDL2main.a $(MINGW_PATH)/lib/libfreetype.dll.a $(MINGW_PATH)/lib/libz.dll.a $(MINGW_PATH)/lib/libpng16.dll.a $(MINGW_PATH)/lib/libpng.dll.a
 COMMON_CFLAGS += -DWINDOWS
-CXX ?= $(TRIPLE)-g++
-
 else
 prefix = /usr/local
 TARGET = cap32
 TEST_TARGET = test_runner
+ifdef WITH_IPF
+LIBS += -ldl
+endif
+endif
+
 IPATHS = -Isrc/ -Isrc/gui/includes `pkg-config --cflags freetype2` `sdl2-config --cflags` `pkg-config --cflags libpng` `pkg-config --cflags zlib`
 LIBS = `sdl2-config --libs` `pkg-config --libs freetype2` `pkg-config --libs libpng` `pkg-config --libs zlib`
 CXX ?= g++
 COMMON_CFLAGS += -fPIC
-ifdef WITH_IPF
-LIBS += -ldl
-endif
+
+ifeq ($(VARIANT),old_win)
+MINGW_PATH = /usr/$(TRIPLE)
+IPATHS = -Isrc/ -Isrc/gui/includes -I$(MINGW_PATH)/include -I$(MINGW_PATH)/include/SDL2 -I$(MINGW_PATH)/include/freetype2
+LIBS = $(MINGW_PATH)/lib/libSDL2.dll.a $(MINGW_PATH)/lib/libSDL2main.a $(MINGW_PATH)/lib/libfreetype.dll.a $(MINGW_PATH)/lib/libz.dll.a $(MINGW_PATH)/lib/libpng16.dll.a $(MINGW_PATH)/lib/libpng.dll.a
+CXX ?= $(TRIPLE)-g++
 endif
 
 ifneq (,$(findstring g++,$(CXX)))
@@ -211,14 +218,18 @@ distrib: $(TARGET)
 	mkdir -p $(ARCHIVE)
 	rm -f $(ARCHIVE).zip
 	cp $(TARGET) $(ARCHIVE)/
+ifeq ($(VARIANT),old_win)
 	$(foreach DLL,$(DLLS),[ -f $(MINGW_PATH)/bin/$(DLL) ] && cp $(MINGW_PATH)/bin/$(DLL) $(ARCHIVE)/;)
 	cp $(MINGW_PATH)/bin/libgcc_s_*-1.dll $(ARCHIVE)/
 ifdef WITH_IPF
 	cp $(MINGW_PATH)/bin/$(CAPSIPFDLL) $(ARCHIVE)/CAPSImg.dll
 endif
+endif
 	cp cap32.cfg.tmpl cap32.cfg COPYING.txt README.md $(ARCHIVE)/
 	cp -r resources/ rom/ licenses/ $(ARCHIVE)/
 	zip -r $(ARCHIVE).zip $(ARCHIVE)
+	# TODO: Remove, for debugging only
+	nm $(TARGET)
 
 install: $(TARGET)
 
@@ -296,11 +307,11 @@ $(TEST_TARGET): $(OBJECTS) $(TEST_OBJECTS) $(OBJDIR)/$(GTEST_DIR)/src/gtest-all.
 	$(CXX) $(LDFLAGS) -o $(TEST_TARGET) $(OBJDIR)/$(GTEST_DIR)/src/gtest-all.o $(OBJDIR)/$(GMOCK_DIR)/src/gmock-all.o $(TEST_OBJECTS) $(OBJECTS) $(LIBS) -lpthread
 
 ifeq ($(PLATFORM),windows)
-unit_test: $(TEST_TARGET)
+unit_test: $(TEST_TARGET) distrib
 	cp $(TEST_TARGET) $(ARCHIVE)/
 	rm -fr $(ARCHIVE)/test
 	ln -s -f ../../test $(ARCHIVE)/test
-	cd $(ARCHIVE) && $(WINE) ./$(TEST_TARGET) --gtest_shuffle
+	cd $(ARCHIVE) && ./$(TEST_TARGET) --gtest_shuffle
 
 e2e_test: $(TARGET)
 	cd test/integrated && ./run_tests.sh
