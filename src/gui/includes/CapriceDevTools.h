@@ -102,6 +102,10 @@ namespace wGui
         void WriteMem(word address, byte value);
         void PrepareMemBankConfig();
 
+        void UnlockRegisters();
+        void LockRegisters();
+        void SaveRegisters();
+
         void RefreshDisassembly();
         void UpdateZ80();
         void UpdateDisassembly();
@@ -111,6 +115,7 @@ namespace wGui
         void UpdateWatchPointsList();
         void UpdateMemConfig();
         void UpdateTextMemory();
+        void UpdateAudio();
 
         void RemoveEphemeralBreakpoints();
 
@@ -182,6 +187,8 @@ namespace wGui
         CFlag* m_pZ80FlagPV;
         CFlag* m_pZ80FlagN;
         CFlag* m_pZ80FlagC;
+
+        CButton* m_pZ80ModifyRegisters;
 
         // Stack
         CLabel* m_pZ80StackLabel;
@@ -299,12 +306,54 @@ namespace wGui
 
         // Video screen
         CLabel* m_pVidLabel;
+
         // Audio screen
-        CLabel* m_pAudLabel;
+        CGroupBox* m_pAudPSGGrp;
+        CLabel* m_pAudChannelALabel;
+        CLabel* m_pAudChannelBLabel;
+        CLabel* m_pAudChannelCLabel;
+        CLabel* m_pAudNoiseLabel;
+
+        CLabel* m_pAudToneLabel;
+        CLabel* m_pAudVolLabel;
+        CLabel* m_pAudToneOnOffLabel;
+        CLabel* m_pAudNoiseOnOffLabel;
+
+        CLabel* m_pAudFreqALabel;
+        CLabel* m_pAudFreqBLabel;
+        CLabel* m_pAudFreqCLabel;
+        CLabel* m_pAudFreqNoiseLabel;
+        CLabel* m_pAudMixerControlLabel;
+        CLabel* m_pAudVolALabel;
+        CLabel* m_pAudVolBLabel;
+        CLabel* m_pAudVolCLabel;
+
+        CLabel* m_pAudVolEnvFreqLabel;
+        CLabel* m_pAudVolEnvShapeLabel;
+        CLabel* m_pAudFreqA;
+        CLabel* m_pAudFreqB;
+        CLabel* m_pAudFreqC;
+        CLabel* m_pAudFreqNoise;
+        CLabel* m_pAudVolA;
+        CLabel* m_pAudVolB;
+        CLabel* m_pAudVolC;
+        CCheckBox* m_pAudToneA;
+        CCheckBox* m_pAudToneB;
+        CCheckBox* m_pAudToneC;
+        CCheckBox* m_pAudNoiseA;
+        CCheckBox* m_pAudNoiseB;
+        CCheckBox* m_pAudNoiseC;
+
+        CLabel* m_pAudMixerControl;
+        CLabel* m_pAudVolEnvFreq;
+        CLabel* m_pAudVolEnvShape;
+
         // Characters screen
         CLabel* m_pChrLabel;
 
         DevTools* m_pDevTools;
+
+        bool registersLocked;
 
       private:
 

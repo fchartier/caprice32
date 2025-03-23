@@ -50,7 +50,7 @@ extern byte *pbROM;
 extern std::string chROMFile[];
 
 byte *pbTapeImageEnd = nullptr;
-extern byte *pbTapeImage;
+extern std::vector<byte> pbTapeImage;
 extern byte *pbGPBuffer;
 extern byte *pbRAM;
 extern byte *pbRAMbuffer;
@@ -67,37 +67,43 @@ struct file_loader
 
 file_loader files_loader_list[] =
 {
-  { DSK_A, ".dsk",
+  { DRIVE::DSK_A, ".dsk",
     [](const std::string& filename) -> int { return dsk_load(filename, &driveA); },
     [](FILE* file) -> int { return dsk_load(file, &driveA); } },
 
-  { DSK_B, ".dsk",
+  { DRIVE::DSK_B, ".dsk",
     [](const std::string& filename) -> int { return dsk_load(filename, &driveB); },
     [](FILE* file) -> int { return dsk_load(file, &driveB); } },
 
-#ifdef WITH_IPF
-  { DSK_A, ".ipf",
+  { DRIVE::DSK_A, ".ipf",
     [](const std::string& filename) -> int { return ipf_load(filename, &driveA); },
     [](FILE* file) -> int { return ipf_load(file, &driveA); } },
 
-  { DSK_B, ".ipf",
+  { DRIVE::DSK_B, ".ipf",
     [](const std::string& filename) -> int { return ipf_load(filename, &driveB); },
     [](FILE* file) -> int { return ipf_load(file, &driveB); } },
-#endif
 
-  { OTHER, ".sna",
+  { DRIVE::DSK_A, ".raw",
+    [](const std::string& filename) -> int { return ipf_load(filename, &driveA); },
+    [](FILE* file) -> int { return ipf_load(file, &driveA); } },
+
+  { DRIVE::DSK_B, ".raw",
+    [](const std::string& filename) -> int { return ipf_load(filename, &driveB); },
+    [](FILE* file) -> int { return ipf_load(file, &driveB); } },
+
+  { DRIVE::SNAPSHOT, ".sna",
     &snapshot_load,
     &snapshot_load },
 
-  { OTHER, ".cdt",
+  { DRIVE::TAPE, ".cdt",
     &tape_insert,
     &tape_insert },
 
-  { OTHER, ".voc",
+  { DRIVE::TAPE, ".voc",
     &tape_insert,
     &tape_insert },
 
-  { OTHER, ".cpr",
+  { DRIVE::CARTRIDGE, ".cpr",
     &cartridge_load,
     &cartridge_load },
 };
@@ -107,10 +113,11 @@ t_disk_format disk_format[MAX_DISK_FORMAT] = {
    { "169K Vendor Format", 40, 1, 9, 2, 0x52, 0xe5, {{ 0x41, 0x46, 0x42, 0x47, 0x43, 0x48, 0x44, 0x49, 0x45 }} }
 };
 
-inline bool fillSlot(std::string &filevar, bool &processedvar, const std::string& fullpath, const std::string& extension, const std::string& type_ext, const std::string& type_desc) {
+inline bool fillSlot(t_slot& slot, bool &processedvar, const std::string& fullpath, const std::string& extension, const std::string& type_ext, const std::string& type_desc) {
    if ((!processedvar) && (extension == type_ext)) {
       LOG_VERBOSE("Loading " << type_desc << " file: " << fullpath);
-      filevar = fullpath;
+      slot.file = fullpath;
+      slot.zip_index = 0;
       processedvar = true;
       return true;
    }
@@ -138,7 +145,7 @@ void fillSlots (std::vector<std::string> slot_list, t_CPC& CPC)
          if (extension == ".zip") { // are we dealing with a zip archive?
            zip::t_zip_info zip_info;
            zip_info.filename = fullpath;
-           zip_info.extensions = ".dsk.sna.cdt.voc.cpr.ipf";
+           zip_info.extensions = ".dsk.sna.cdt.voc.cpr.ipf.raw";
            if (zip::dir(&zip_info)) {
              continue; // error or nothing relevant found
            }
@@ -147,21 +154,25 @@ void fillSlots (std::vector<std::string> slot_list, t_CPC& CPC)
            extension = filename.substr(pos); // grab the extension
          }
 
-         if (fillSlot(CPC.drvA_file, have_DSKA, fullpath, extension, ".dsk", "drive A disk"))
+         if (fillSlot(CPC.driveA, have_DSKA, fullpath, extension, ".dsk", "drive A disk"))
+           continue;
+         if (fillSlot(CPC.driveA, have_DSKA, fullpath, extension, ".ipf", "drive A disk (IPF)"))
             continue;
-         if (fillSlot(CPC.drvA_file, have_DSKA, fullpath, extension, ".ipf", "drive A disk (IPF)"))
+         if (fillSlot(CPC.driveA, have_DSKA, fullpath, extension, ".raw", "drive A disk (CT-RAW)"))
+           continue;
+         if (fillSlot(CPC.driveB, have_DSKB, fullpath, extension, ".dsk", "drive B disk"))
             continue;
-         if (fillSlot(CPC.drvB_file, have_DSKB, fullpath, extension, ".dsk", "drive B disk"))
+         if (fillSlot(CPC.driveB, have_DSKB, fullpath, extension, ".ipf", "drive B disk (IPF)"))
             continue;
-         if (fillSlot(CPC.drvB_file, have_DSKB, fullpath, extension, ".ipf", "drive B disk (IPF)"))
+         if (fillSlot(CPC.driveB, have_DSKB, fullpath, extension, ".raw", "drive B disk (CT-IPF)"))
             continue;
-         if (fillSlot(CPC.snap_file, have_SNA, fullpath, extension, ".sna", "CPC state snapshot"))
+         if (fillSlot(CPC.snapshot, have_SNA, fullpath, extension, ".sna", "CPC state snapshot"))
             continue;
-         if (fillSlot(CPC.tape_file, have_TAP, fullpath, extension, ".cdt", "tape (CDT)"))
+         if (fillSlot(CPC.tape, have_TAP, fullpath, extension, ".cdt", "tape (CDT)"))
             continue;
-         if (fillSlot(CPC.tape_file, have_TAP, fullpath, extension, ".voc", "tape (VOC)"))
+         if (fillSlot(CPC.tape, have_TAP, fullpath, extension, ".voc", "tape (VOC)"))
             continue;
-         if (fillSlot(CPC.cart_file, have_CPR, fullpath, extension, ".cpr", "cartridge"))
+         if (fillSlot(CPC.cartridge, have_CPR, fullpath, extension, ".cpr", "cartridge"))
             continue;
       }
    }
@@ -169,12 +180,12 @@ void fillSlots (std::vector<std::string> slot_list, t_CPC& CPC)
 
 void loadSlots() {
    memset(&driveA, 0, sizeof(t_drive)); // clear disk drive A data structure
-   file_load(CPC.drvA_file, DSK_A);
+   file_load(CPC.driveA);
    memset(&driveB, 0, sizeof(t_drive)); // clear disk drive B data structure
-   file_load(CPC.drvB_file, DSK_B);
-   file_load(CPC.tape_file, OTHER);
-   file_load(CPC.snap_file, OTHER);
-   // Cartridge was loaded by emulator_init if needed
+   file_load(CPC.driveB);
+   file_load(CPC.tape);
+   file_load(CPC.snapshot);
+   // Cartridge was loaded by emulator_init which called cartridge_load if needed
 }
 
 // Extract 'filename' from 'zipfile'. Filename must end with one of the extensions listed in 'ext'.
@@ -459,11 +470,12 @@ int dsk_load (FILE *pfile, t_drive *drive)
   LOG_DEBUG("Loading disk");
   dword dwTrackSize, track, side, sector, dwSectorSize, dwSectors;
   byte *pbPtr, *pbDataPtr, *pbTempPtr, *pbTrackSizeTable;
-  if(fread(pbGPBuffer, 0x100, 1, pfile) != 1) { // read DSK header
+  byte dsk_header[0x100];
+  if(fread(dsk_header, 0x100, 1, pfile) != 1) { // read DSK header
     LOG_ERROR("Couldn't read DSK header");
     return ERR_DSK_INVALID;
   }
-  pbPtr = pbGPBuffer;
+  pbPtr = dsk_header;
 
   if (memcmp(pbPtr, "MV - CPC", 8) == 0) { // normal DSK image?
     LOG_DEBUG("Loading normal disk");
@@ -481,12 +493,13 @@ int dsk_load (FILE *pfile, t_drive *drive)
     drive->sides--; // zero base number of sides
     for (track = 0; track < drive->tracks; track++) { // loop for all tracks
       for (side = 0; side <= drive->sides; side++) { // loop for all sides
-        if(fread(pbGPBuffer+0x100, 0x100, 1, pfile) != 1) { // read track header
+        byte track_header[0x100];
+        if(fread(track_header, 0x100, 1, pfile) != 1) { // read track header
           LOG_ERROR("Couldn't read DSK track header for track " << track << " side " << side);
           dsk_eject(drive);
           return ERR_DSK_INVALID;
         }
-        pbPtr = pbGPBuffer + 0x100;
+        pbPtr = track_header;
         if (memcmp(pbPtr, "Track-Info", 10) != 0) { // abort if ID does not match
           LOG_ERROR("Corrupted DSK track header for track " << track << " side " << side);
           dsk_eject(drive);
@@ -544,12 +557,13 @@ int dsk_load (FILE *pfile, t_drive *drive)
           LOG_DEBUG("Track " << track << ", side " << side << ", size " << dwTrackSize);
           if (dwTrackSize != 0) { // only process if track contains data
             dwTrackSize -= 0x100; // compensate for track header
-            if(fread(pbGPBuffer+0x100, 0x100, 1, pfile) != 1) { // read track header
+            byte track_header[0x100];
+            if(fread(track_header, 0x100, 1, pfile) != 1) { // read track header
               LOG_ERROR("Couldn't read DSK track header for track " << track << " side " << side);
               dsk_eject(drive);
               return ERR_DSK_INVALID;
             }
-            pbPtr = pbGPBuffer + 0x100;
+            pbPtr = track_header;
             if (memcmp(pbPtr, "Track-Info", 10) != 0) { // valid track header?
               LOG_ERROR("Corrupted DSK track header for track " << track << " side " << side);
               dsk_eject(drive);
@@ -626,6 +640,11 @@ int dsk_save (const std::string &filename, t_drive *drive)
    t_track_header th;
    dword track, side, pos, sector;
 
+   // If there are no tracks, don't save
+   if (drive->tracks==0) {
+      LOG_ERROR("No tracks to save");
+      return ERR_DSK_WRITE;
+   }
    if ((pfileObject = fopen(filename.c_str(), "wb")) != nullptr) {
       memset(&dh, 0, sizeof(dh));
       memcpy(dh.id, "EXTENDED CPC DSK File\r\nDisk-Info\r\n", sizeof(dh.id));
@@ -643,6 +662,7 @@ int dsk_save (const std::string &filename, t_drive *drive)
       }
       if (!fwrite(&dh, sizeof(dh), 1, pfileObject)) { // write header to file
          fclose(pfileObject);
+         LOG_ERROR("Error while writing to the file '" << filename << "'");
          return ERR_DSK_WRITE;
       }
 
@@ -665,10 +685,12 @@ int dsk_save (const std::string &filename, t_drive *drive)
                }
                if (!fwrite(&th, sizeof(th), 1, pfileObject)) { // write track header
                   fclose(pfileObject);
+                  LOG_ERROR("Error while writing to the file '" << filename << "'");
                   return ERR_DSK_WRITE;
                }
                if (!fwrite(drive->track[track][side].data, drive->track[track][side].size, 1, pfileObject)) { // write track data
                   fclose(pfileObject);
+                  LOG_ERROR("Error while writing to the file '" << filename << "'");
                   return ERR_DSK_WRITE;
                }
             }
@@ -677,6 +699,7 @@ int dsk_save (const std::string &filename, t_drive *drive)
       drive->altered = false;  // Drive is not modified anymore
       fclose(pfileObject);
    } else {
+      LOG_ERROR("Error while opening the file '" << filename << "' for write: " << strerror(errno));
       return ERR_DSK_WRITE; // write attempt failed
    }
 
@@ -735,8 +758,7 @@ exit:
 
 void tape_eject ()
 {
-   delete [] pbTapeImage;
-   pbTapeImage = nullptr;
+  pbTapeImage.clear();
 }
 
 int snapshot_load (FILE *pfile)
@@ -749,14 +771,17 @@ int snapshot_load (FILE *pfile)
 
   memset(&sh, 0, sizeof(sh));
   if(fread(&sh, sizeof(sh), 1, pfile) != 1) { // read snapshot header
+    LOG_ERROR("Error loading snapshot: couldn't read header");
     return ERR_SNA_INVALID;
   }
   if (memcmp(sh.id, "MV - SNA", 8) != 0) { // valid SNApshot image?
+    LOG_ERROR("Error loading snapshot: invalid header");
     return ERR_SNA_INVALID;
   }
   dwSnapSize = sh.ram_size[0] + (sh.ram_size[1] * 256); // memory dump size
   dwSnapSize &= ~0x3f; // limit to multiples of 64
   if (!dwSnapSize) {
+    LOG_ERROR("Error loading snapshot: zero size");
     return ERR_SNA_SIZE;
   }
   if (dwSnapSize > CPC.ram_size) { // memory dump size differs from current RAM size?
@@ -773,6 +798,7 @@ int snapshot_load (FILE *pfile)
   n = fread(pbRAM, dwSnapSize*1024, 1, pfile); // read memory dump into CPC RAM
   if (!n) {
     emulator_reset();
+    LOG_ERROR("Error loading snapshot: couldn't read RAM");
     return ERR_SNA_INVALID;
   }
 
@@ -857,6 +883,7 @@ int snapshot_load (FILE *pfile)
     if (dwModel != CPC.model) { // different from what we're currently running?
       if (dwModel > 3) { // not one of the known models?
         emulator_reset();
+        LOG_ERROR("Error loading snapshot: invalid or unsupported CPC model");
         return ERR_SNA_CPC_TYPE;
       }
       std::string romFilename = CPC.rom_path + "/" + chROMFile[dwModel];
@@ -865,11 +892,13 @@ int snapshot_load (FILE *pfile)
         fclose(pfileObject);
         if (!n) {
           emulator_reset();
+          LOG_ERROR("Error loading snapshot: couldn't read ROM");
           return ERR_CPC_ROM_MISSING;
         }
         CPC.model = dwModel;
       } else { // ROM image load failed
         emulator_reset();
+        LOG_ERROR("Error loading snapshot: couldn't open ROM '" << romFilename << "'");
         return ERR_CPC_ROM_MISSING;
       }
     }
@@ -940,6 +969,7 @@ int snapshot_load (const std::string &filename)
    if ((pfileObject = fopen(filename.c_str(), "rb")) != nullptr) {
      return snapshot_load(pfileObject);
    }
+   LOG_ERROR("Error loading snapshot: file not found: '" << filename << "'");
    return ERR_FILE_NOT_FOUND;
 }
 
@@ -947,6 +977,7 @@ int tape_insert (FILE *pfile)
 {
    tape_eject();
    if(fread(pbGPBuffer, 10, 1, pfile) != 1) { // read beginning of header
+      LOG_ERROR("Error loading tape: couldn't read header");
       return ERR_TAP_INVALID;
    }
    // Reset so that the next method can recheck the header
@@ -961,7 +992,7 @@ int tape_insert (FILE *pfile)
       return tape_insert_voc(pfile);
    }
    // Unknown file
-   LOG_DEBUG("tape_insert unknown file");
+   LOG_ERROR("Error loading tape: Unrecognized file type");
    return ERR_TAP_INVALID;
 }
 
@@ -970,6 +1001,7 @@ int tape_insert (const std::string &filename)
    LOG_DEBUG("tape_insert " << filename);
    FILE *pfile;
    if ((pfile = fopen(filename.c_str(), "rb")) == nullptr) {
+      LOG_ERROR("Error loading tape: File not found: '" << filename << "'");
       return ERR_FILE_NOT_FOUND;
    }
 
@@ -987,38 +1019,38 @@ int tape_insert_cdt (FILE *pfile)
    byte *pbPtr, *pbBlock;
 
    if(fread(pbGPBuffer, 10, 1, pfile) != 1) { // read CDT header
-      LOG_DEBUG("Couldn't read CDT header");
+      LOG_ERROR("Couldn't read CDT header");
       return ERR_TAP_INVALID;
    }
    pbPtr = pbGPBuffer;
    if (memcmp(pbPtr, "ZXTape!\032", 8) != 0) { // valid CDT file?
-      LOG_DEBUG("Invalid CDT header '" << pbPtr << "'");
+      LOG_ERROR("Invalid CDT header '" << pbPtr << "'");
       return ERR_TAP_INVALID;
    }
    if (*(pbPtr + 0x08) != 1) { // major version must be 1
-      LOG_DEBUG("Invalid CDT major version");
+      LOG_ERROR("Invalid CDT major version");
       return ERR_TAP_INVALID;
    }
    lFileSize = file_size(fileno(pfile)) - 0x0a;
    if (lFileSize <= 0) { // the tape image should have at least one block...
-      LOG_DEBUG("Invalid CDT file size");
+      LOG_ERROR("Invalid CDT file size");
       return ERR_TAP_INVALID;
    }
-   pbTapeImage = new byte[lFileSize+6];
-   *pbTapeImage = 0x20; // start off with a pause block
-   *reinterpret_cast<word *>(pbTapeImage+1) = 2000; // set the length to 2 seconds
-   if(fread(pbTapeImage+3, lFileSize, 1, pfile) != 1) { // append the entire CDT file
-      LOG_DEBUG("Couldn't read CDT file");
+   pbTapeImage.resize(lFileSize+6);
+   pbTapeImage[0] = 0x20; // start off with a pause block
+   *reinterpret_cast<word *>(&pbTapeImage[1]) = 2000; // set the length to 2 seconds
+   if(fread(&pbTapeImage[3], lFileSize, 1, pfile) != 1) { // append the entire CDT file
+      LOG_ERROR("Couldn't read CDT file");
      return ERR_TAP_INVALID;
    }
-   *(pbTapeImage+lFileSize+3) = 0x20; // end with a pause block
-   *reinterpret_cast<word *>(pbTapeImage+lFileSize+3+1) = 2000; // set the length to 2 seconds
+   *(&pbTapeImage[lFileSize+3]) = 0x20; // end with a pause block
+   *reinterpret_cast<word *>(&pbTapeImage[lFileSize+3+1]) = 2000; // set the length to 2 seconds
 
    #ifdef DEBUG_TAPE
    fputs("--- New Tape\r\n", pfoDebug);
    #endif
-   pbTapeImageEnd = pbTapeImage + lFileSize+6;
-   pbBlock = pbTapeImage;
+   pbTapeImageEnd = &pbTapeImage[lFileSize+6];
+   pbBlock = &pbTapeImage[0];
    bool bolGotDataBlock = false;
    while (pbBlock < pbTapeImageEnd) {
       bID = *pbBlock++;
@@ -1048,7 +1080,7 @@ int tape_insert_cdt (FILE *pfile)
             bolGotDataBlock = true;
             break;
          case 0x20: // pause
-            if ((!bolGotDataBlock) && (pbBlock != pbTapeImage+1)) {
+            if ((!bolGotDataBlock) && (pbBlock != &pbTapeImage[1])) {
                *reinterpret_cast<word *>(pbBlock) = 0; // remove any pauses (execept ours) before the data starts
             }
             iBlockLength = 2;
@@ -1060,32 +1092,32 @@ int tape_insert_cdt (FILE *pfile)
             iBlockLength = 0;
             break;
          case 0x23: // jump to block
-            LOG_DEBUG("Couldn't load CDT file: unsupported " << bID);
+            LOG_ERROR("Couldn't load CDT file: unsupported block ID: " << bID);
             return ERR_TAP_UNSUPPORTED;
             iBlockLength = 2;
             break;
          case 0x24: // loop start
-            LOG_DEBUG("Couldn't load CDT file: unsupported " << bID);
+            LOG_ERROR("Couldn't load CDT file: unsupported block ID: " << bID);
             return ERR_TAP_UNSUPPORTED;
             iBlockLength = 2;
             break;
          case 0x25: // loop end
-            LOG_DEBUG("Couldn't load CDT file: unsupported " << bID);
+            LOG_ERROR("Couldn't load CDT file: unsupported block ID: " << bID);
             return ERR_TAP_UNSUPPORTED;
             iBlockLength = 0;
             break;
          case 0x26: // call sequence
-            LOG_DEBUG("Couldn't load CDT file: unsupported " << bID);
+            LOG_ERROR("Couldn't load CDT file: unsupported block ID: " << bID);
             return ERR_TAP_UNSUPPORTED;
             iBlockLength = (*reinterpret_cast<word *>(pbBlock) * 2) + 2;
             break;
          case 0x27: // return from sequence
-            LOG_DEBUG("Couldn't load CDT file: unsupported " << bID);
+            LOG_ERROR("Couldn't load CDT file: unsupported block ID: " << bID);
             return ERR_TAP_UNSUPPORTED;
             iBlockLength = 0;
             break;
          case 0x28: // select block
-            LOG_DEBUG("Couldn't load CDT file: unsupported " << bID);
+            LOG_ERROR("Couldn't load CDT file: unsupported block ID: " << bID);
             return ERR_TAP_UNSUPPORTED;
             iBlockLength = *reinterpret_cast<word *>(pbBlock) + 2;
             break;
@@ -1125,7 +1157,7 @@ int tape_insert_cdt (FILE *pfile)
       pbBlock += iBlockLength;
    }
    if (pbBlock != pbTapeImageEnd) {
-      LOG_DEBUG("CDT file error: Didn't reach end of tape");
+      LOG_ERROR("CDT file error: Didn't reach end of tape");
       tape_eject();
       return ERR_TAP_INVALID;
    }
@@ -1142,17 +1174,20 @@ int tape_insert_voc (FILE *pfile)
 
    tape_eject();
    if(fread(pbGPBuffer, 26, 1, pfile) != 1) { // read VOC header
+     LOG_ERROR("Reading VOC file: Invalid VOC file: error reading header");
      return ERR_TAP_BAD_VOC;
    }
    pbPtr = pbGPBuffer;
    if (memcmp(pbPtr, "Creative Voice File\032", 20) != 0) { // valid VOC file?
-      return ERR_TAP_BAD_VOC;
+     LOG_ERROR("Reading VOC file: Invalid VOC file");
+     return ERR_TAP_BAD_VOC;
    }
    lOffset =
    lInitialOffset = *reinterpret_cast<word *>(pbPtr + 0x14);
    lFileSize = file_size(fileno(pfile));
    if ((lFileSize-26) <= 0) { // should have at least one block...
-      return ERR_TAP_BAD_VOC;
+     LOG_ERROR("Reading VOC file: Invalid VOC file: no block");
+     return ERR_TAP_BAD_VOC;
    }
 
    #ifdef DEBUG_TAPE
@@ -1165,6 +1200,7 @@ int tape_insert_voc (FILE *pfile)
    while ((!bolDone) && (lOffset < lFileSize)) {
       fseek(pfile, lOffset, SEEK_SET);
       if(fread(pbPtr, 16, 1, pfile) != 1) { // read block ID + size
+        LOG_ERROR("Reading VOC file: Invalid VOC file: couldn't read block at " << lOffset);
         return ERR_TAP_BAD_VOC;
       }
       #ifdef DEBUG_TAPE
@@ -1178,10 +1214,12 @@ int tape_insert_voc (FILE *pfile)
             iBlockLength = (*reinterpret_cast<dword *>(pbPtr+0x01) & 0x00ffffff) + 4;
             lSampleLength += iBlockLength - 6;
             if ((bSampleRate) && (bSampleRate != *(pbPtr+0x04))) { // no change in sample rate allowed
+               LOG_ERROR("Reading VOC file: unsupported change in sample rate");
                return ERR_TAP_BAD_VOC;
             }
             bSampleRate = *(pbPtr+0x04);
             if (*(pbPtr+0x05) != 0) { // must be 8 bits wide
+               LOG_ERROR("Reading VOC file: unsupported non-8 bits codec");
                return ERR_TAP_BAD_VOC;
             }
             break;
@@ -1193,6 +1231,7 @@ int tape_insert_voc (FILE *pfile)
             iBlockLength = 4;
             lSampleLength += *reinterpret_cast<word *>(pbPtr+0x01) + 1;
             if ((bSampleRate) && (bSampleRate != *(pbPtr+0x03))) { // no change in sample rate allowed
+               LOG_ERROR("Reading VOC file: unsupported change in sample rate");
                return ERR_TAP_BAD_VOC;
             }
             bSampleRate = *(pbPtr+0x03);
@@ -1203,7 +1242,20 @@ int tape_insert_voc (FILE *pfile)
          case 0x5: // ascii
             iBlockLength = (*reinterpret_cast<dword *>(pbPtr+0x01) & 0x00ffffff) + 4;
             break;
+         case 0x6: // repeat
+            LOG_ERROR("Reading VOC file: unsupported repeat block");
+            return ERR_TAP_BAD_VOC;
+         case 0x7: // end repeat
+            LOG_ERROR("Reading VOC file: unsupported end repeat block");
+            return ERR_TAP_BAD_VOC;
+         case 0x8: // extended
+            LOG_ERROR("Reading VOC file: unsupported extended block");
+            return ERR_TAP_BAD_VOC;
+         case 0x9: // sound data - new format
+            LOG_ERROR("Reading VOC file: unsupported new format sound data block");
+            return ERR_TAP_BAD_VOC;
          default:
+            LOG_ERROR("Reading VOC file: unsupported unknown block type: " << static_cast<int>(*pbPtr));
             return ERR_TAP_BAD_VOC;
       }
       lOffset += iBlockLength;
@@ -1215,18 +1267,19 @@ int tape_insert_voc (FILE *pfile)
    dword dwTapePulseCycles = 3500000L / (1000000L / (256 - bSampleRate)); // length of one pulse in ZX Spectrum T states
    dword dwCompressedSize = lSampleLength >> 3; // 8x data reduction
    if (dwCompressedSize > 0x00ffffff) { // we only support one direct recording block right now
+      LOG_ERROR("Reading VOC file: tape size is too big");
       return ERR_TAP_BAD_VOC;
    }
-   pbTapeImage = new byte[dwCompressedSize+1+8+6];
-   *pbTapeImage = 0x20; // start off with a pause block
-   *reinterpret_cast<word *>(pbTapeImage+1) = 2000; // set the length to 2 seconds
+   pbTapeImage.resize(dwCompressedSize+1+8+6);
+   pbTapeImage[0] = 0x20; // start off with a pause block
+   *reinterpret_cast<word *>(&pbTapeImage[1]) = 2000; // set the length to 2 seconds
 
-   *(pbTapeImage+3) = 0x15; // direct recording block
-   *reinterpret_cast<word *>(pbTapeImage+4) = static_cast<word>(dwTapePulseCycles); // number of T states per sample
-   *reinterpret_cast<word *>(pbTapeImage+6) = 0; // pause after block
-   *(pbTapeImage+8) = lSampleLength & 7 ? lSampleLength & 7 : 8; // bits used in last byte
-   *reinterpret_cast<dword *>(pbTapeImage+9) = dwCompressedSize & 0x00ffffff; // data length
-   pbTapeImagePtr = pbTapeImage + 12;
+   *(&pbTapeImage[3]) = 0x15; // direct recording block
+   *reinterpret_cast<word *>(&pbTapeImage[4]) = static_cast<word>(dwTapePulseCycles); // number of T states per sample
+   *reinterpret_cast<word *>(&pbTapeImage[6]) = 0; // pause after block
+   pbTapeImage[8] = lSampleLength & 7 ? lSampleLength & 7 : 8; // bits used in last byte
+   *reinterpret_cast<dword *>(&pbTapeImage[9]) = dwCompressedSize & 0x00ffffff; // data length
+   pbTapeImagePtr = &pbTapeImage[12];
 
    lOffset = lInitialOffset;
    bolDone = false;
@@ -1235,6 +1288,7 @@ int tape_insert_voc (FILE *pfile)
    while ((!bolDone) && (lOffset < lFileSize)) {
       fseek(pfile, lOffset, SEEK_SET);
       if(fread(pbPtr, 1, 1, pfile) != 1) { // read block ID
+        LOG_ERROR("Reading VOC file: error reading block ID");
         return ERR_TAP_BAD_VOC;
       }
       switch(*pbPtr) {
@@ -1243,12 +1297,14 @@ int tape_insert_voc (FILE *pfile)
             break;
          case 0x1: // sound data
             if(fread(pbPtr, 3+2, 1, pfile) != 1) { // get block size and sound info
+              LOG_ERROR("Reading VOC file: error reading sound data");
               return ERR_TAP_BAD_VOC;
             }
             iBlockLength = (*reinterpret_cast<dword *>(pbPtr) & 0x00ffffff) + 4;
             lSampleLength = iBlockLength - 6;
             pbVocDataBlock = new byte[lSampleLength];
             if(fread(pbVocDataBlock, lSampleLength, 1, pfile) != 1) {
+              LOG_ERROR("Reading VOC file: error reading sound data");
               return ERR_TAP_BAD_VOC;
             }
             pbVocDataBlockPtr = pbVocDataBlock;
@@ -1268,12 +1324,14 @@ int tape_insert_voc (FILE *pfile)
             break;
          case 0x2: // sound continue
             if(fread(pbPtr, 3, 1, pfile) != 1) { // get block size
+              LOG_ERROR("Reading VOC file: error reading sound continue");
               return ERR_TAP_BAD_VOC;
             }
             iBlockLength = (*reinterpret_cast<dword *>(pbPtr) & 0x00ffffff) + 4;
             lSampleLength = iBlockLength - 4;
             pbVocDataBlock = new byte[lSampleLength];
             if(fread(pbVocDataBlock, lSampleLength, 1, pfile) != 1) {
+              LOG_ERROR("Reading VOC file: error reading sound continue");
               return ERR_TAP_BAD_VOC;
             }
             pbVocDataBlockPtr = pbVocDataBlock;
@@ -1289,7 +1347,7 @@ int tape_insert_voc (FILE *pfile)
                   bByte = 0;
                }
             }
-	    delete [] pbVocDataBlock;
+            delete [] pbVocDataBlock;
             break;
          case 0x3: // silence
             iBlockLength = 4;
@@ -1309,6 +1367,9 @@ int tape_insert_voc (FILE *pfile)
          case 0x5: // ascii
             iBlockLength = (*reinterpret_cast<dword *>(pbPtr) & 0x00ffffff) + 4;
             break;
+         default:
+            LOG_ERROR("Reading VOC file: unsupported unknown block type: " << static_cast<int>(*pbPtr));
+            return ERR_TAP_BAD_VOC;
       }
       lOffset += iBlockLength;
    }
@@ -1325,7 +1386,7 @@ int tape_insert_voc (FILE *pfile)
 void cartridge_load ()
 {
   if (CPC.model >= 3) {
-     if (file_load(CPC.cart_file, OTHER)) {
+     if (file_load(CPC.cartridge)) {
         fprintf(stderr, "Load of cartridge failed. Aborting.\n");
         cleanExit(-1);
      }
@@ -1337,6 +1398,7 @@ int cartridge_load (const std::string& filepath)
   if (CPC.model >= 3) {
     return cpr_load(filepath);
   }
+  LOG_ERROR("Loading cartridge: not supported on the chosen CPC model: CPC.model=" << CPC.model);
   return ERR_FILE_UNSUPPORTED;
 }
 
@@ -1344,43 +1406,72 @@ int cartridge_load (FILE *file) {
   if (CPC.model >= 3) {
     return cpr_load(file);
   }
+  LOG_ERROR("Loading cartridge: not supported on the chosen CPC model: CPC.model=" << CPC.model);
   return ERR_FILE_UNSUPPORTED;
 }
 
+std::string drive_extensions(const DRIVE drive) {
+  switch (drive) {
+    case DRIVE::DSK_A:
+    case DRIVE::DSK_B:
+      return ".dsk.ipf.raw";
+    case DRIVE::TAPE:
+      return ".cdt.voc";
+    case DRIVE::SNAPSHOT:
+      return ".sna";
+    case DRIVE::CARTRIDGE:
+      return ".cpr";
+  }
+  LOG_ERROR("Unsupported drive type: " << static_cast<int>(drive))
+  return "";
+}
+
 // Still some duplication there... but it cannot really be helped
-int file_load(const std::string& filepath, const DRIVE drive)
+int file_load(t_slot& slot)
 {
-  if (filepath.length() < 4) return ERR_FILE_UNSUPPORTED;
-  int pos = filepath.length() - 4;
-  std::string extension = stringutils::lower(filepath.substr(pos));
+  if (slot.file.empty()) {
+    // Special casing because this is not an error if called from loadSlots
+    LOG_VERBOSE("Ignoring empty filename passed to file_load.")
+    return ERR_FILE_NOT_FOUND;
+  }
+  if (slot.file.length() < 4) {
+    LOG_ERROR("File path is too short: '" << slot.file << "'");
+    return ERR_FILE_NOT_FOUND;
+  }
+  int pos = slot.file.length() - 4;
+  std::string extension = stringutils::lower(slot.file.substr(pos));
 
   FILE *file = nullptr;
   if (extension == ".zip") {
     zip::t_zip_info zip_info;
-    zip_info.filename = filepath;
-    zip_info.extensions = ".dsk.sna.cdt.voc.cpr.ipf";
+    zip_info.filename = slot.file;
+    zip_info.extensions = drive_extensions(slot.drive);
     if (zip::dir(&zip_info)) {
       // error or nothing relevant found
-      LOG_ERROR("Error opening or parsing zip file " << filepath);
+      LOG_ERROR("Error opening or parsing zip file " << slot.file);
       return ERR_FILE_UNZIP_FAILED;
     }
 
-    std::string filename = zip_info.filesOffsets[0].first;
+    slot.zip_index = slot.zip_index % zip_info.filesOffsets.size();
+    std::string filename = zip_info.filesOffsets[slot.zip_index].first;
     pos = filename.length() - 4;
     extension = stringutils::lower(filename.substr(pos)); // grab the extension in lowercases
-    LOG_DEBUG("Extracting " << filepath << ", " << filename << ", " << extension);
-    file = extractFile(filepath, filename, extension);
+    LOG_DEBUG("Extracting " << slot.file << ", " << filename << ", " << extension);
+    file = extractFile(slot.file, filename, extension);
+    if (zip_info.filesOffsets.size() > 1) {
+      // Give 5s to the user to read the message.
+      set_osd_message("Loaded '" + filename + "' - Press Shift+F5 for next file", 5000);
+    }
   }
 
   for(const auto& loader : files_loader_list) {
-    if (drive == loader.drive && extension == loader.extension) {
+    if (slot.drive == loader.drive && extension == loader.extension) {
       if (file) {
         return loader.load_from_file(file);
       }
-      return loader.load_from_filename(filepath);
+      return loader.load_from_filename(slot.file);
     }
   }
-  LOG_ERROR("File format unsupported for " << filepath);
+  LOG_ERROR("File format unsupported for " << slot.file);
   return ERR_FILE_UNSUPPORTED;
 }
-

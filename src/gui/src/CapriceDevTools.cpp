@@ -18,6 +18,7 @@
 extern t_z80regs z80;
 extern t_CPC CPC;
 extern t_GateArray GateArray;
+extern t_PSG PSG;
 extern std::vector<Breakpoint> breakpoints;
 extern std::vector<Watchpoint> watchpoints;
 extern byte* pbROMlo;
@@ -238,34 +239,9 @@ CapriceDevTools::CapriceDevTools(const CRect& WindowRect, CWindow* pParent, CFon
     m_pZ80FlagN  = new CFlag(CRect(CPoint(340, 320), 35, 20), m_pGroupBoxTabZ80, "N",  "Add/substract flag");
     m_pZ80FlagC  = new CFlag(CRect(CPoint(340, 340), 35, 20), m_pGroupBoxTabZ80, "C",  "Carry flag");
 
-    // Only allow to modify registers for which saving is implemented.
-    // The main problem is that a same register is displayed multiple times
-    // (e.g. A in both A and AF) so allowing to modify both leads to the problem
-    // that we don't know which one we should take.
-    m_pZ80RegA->SetReadOnly(false);
-    m_pZ80RegB->SetReadOnly(false);
-    m_pZ80RegC->SetReadOnly(false);
-    m_pZ80RegD->SetReadOnly(false);
-    m_pZ80RegE->SetReadOnly(false);
-    m_pZ80RegH->SetReadOnly(false);
-    m_pZ80RegI->SetReadOnly(false);
-    m_pZ80RegL->SetReadOnly(false);
-    m_pZ80RegR->SetReadOnly(false);
-    m_pZ80RegIX->SetReadOnly(false);
-    m_pZ80RegIY->SetReadOnly(false);
-    m_pZ80RegPC->SetReadOnly(false);
-    m_pZ80RegSP->SetReadOnly(false);
-    // TODO: Allow to modify individual flags instead of F as a whole.
-    m_pZ80RegF->SetReadOnly(false);
-    m_pZ80FlagS->SetReadOnly(true);
-    m_pZ80FlagZ->SetReadOnly(true);
-    m_pZ80FlagX1->SetReadOnly(true);
-    m_pZ80FlagH->SetReadOnly(true);
-    m_pZ80FlagX2->SetReadOnly(true);
-    m_pZ80FlagPV->SetReadOnly(true);
-    m_pZ80FlagN->SetReadOnly(true);
-    m_pZ80FlagC->SetReadOnly(true);
-    // TODO: Allow to modify prime registers too.
+    m_pZ80ModifyRegisters = new CButton(CRect(CPoint(510, 10), 100, 20), m_pGroupBoxTabZ80, "Unlock registers");
+
+    LockRegisters();
 
     // TODO: Add information about interrupts (mode, IFF1, IFF2)
 
@@ -445,9 +421,51 @@ CapriceDevTools::CapriceDevTools(const CRect& WindowRect, CWindow* pParent, CFon
 
     // ---------------- 'Video' screen ----------------
     m_pVidLabel = new CLabel(CPoint(10, 10), m_pGroupBoxTabVideo, "Work in progress ... Nothing to see here yet, but come back later for video (CRTC & GateArray info).");
+
     // ---------------- 'Audio' screen ----------------
-    m_pAudLabel = new CLabel(CPoint(10, 10), m_pGroupBoxTabAudio, "Work in progress ... Nothing to see here yet, but come back later for sound (tone and volume envelopes, etc ...).");
-    // TODO: PSG registers, envelopes, noise, channel curve? ...
+    m_pAudPSGGrp = new CGroupBox(
+        CRect(CPoint(5, 0), m_pGroupBoxTabAudio->GetClientRect().Width()-10, 120),
+        m_pGroupBoxTabAudio, "PSG");
+    m_pAudChannelALabel = new CLabel(CPoint(10, 30), m_pGroupBoxTabAudio, "Channel A:");
+    m_pAudChannelBLabel = new CLabel(CPoint(10, 50), m_pGroupBoxTabAudio, "Channel B:");
+    m_pAudChannelCLabel = new CLabel(CPoint(10, 70), m_pGroupBoxTabAudio, "Channel C:");
+    m_pAudNoiseLabel = new CLabel(CPoint(10, 90), m_pGroupBoxTabAudio, "Noise:");
+
+    m_pAudToneLabel = new CLabel(CPoint(100, 10), m_pGroupBoxTabAudio, "Tone");
+    m_pAudVolLabel = new CLabel(CPoint(180, 10), m_pGroupBoxTabAudio, "Volume");
+    m_pAudToneOnOffLabel = new CLabel(CPoint(230, 10), m_pGroupBoxTabAudio, "Tone");
+    m_pAudNoiseOnOffLabel = new CLabel(CPoint(280, 10), m_pGroupBoxTabAudio, "Noise");
+
+    m_pAudFreqA = new CLabel(CPoint(95, 30), m_pGroupBoxTabAudio);
+    m_pAudFreqB = new CLabel(CPoint(95, 50), m_pGroupBoxTabAudio);
+    m_pAudFreqC = new CLabel(CPoint(95, 70), m_pGroupBoxTabAudio);
+    m_pAudFreqNoise = new CLabel(CPoint(95, 90), m_pGroupBoxTabAudio);
+    m_pAudVolA = new CLabel(CPoint(180, 30), m_pGroupBoxTabAudio);
+    m_pAudVolB = new CLabel(CPoint(180, 50), m_pGroupBoxTabAudio);
+    m_pAudVolC = new CLabel(CPoint(180, 70), m_pGroupBoxTabAudio);
+
+    m_pAudToneA = new CCheckBox(CRect(CPoint(230, 30), 10, 10), m_pGroupBoxTabAudio);
+    m_pAudToneB = new CCheckBox(CRect(CPoint(230, 50), 10, 10), m_pGroupBoxTabAudio);
+    m_pAudToneC = new CCheckBox(CRect(CPoint(230, 70), 10, 10), m_pGroupBoxTabAudio);
+    m_pAudNoiseA = new CCheckBox(CRect(CPoint(280, 30), 10, 10), m_pGroupBoxTabAudio);
+    m_pAudNoiseB = new CCheckBox(CRect(CPoint(280, 50), 10, 10), m_pGroupBoxTabAudio);
+    m_pAudNoiseC = new CCheckBox(CRect(CPoint(280, 70), 10, 10), m_pGroupBoxTabAudio);
+
+    m_pAudMixerControlLabel = new CLabel(CPoint(390, 30), m_pGroupBoxTabAudio, "Mixer control:");
+    m_pAudVolEnvFreqLabel = new CLabel(CPoint(390, 50), m_pGroupBoxTabAudio, "Envelope frequence:");
+    m_pAudVolEnvShapeLabel = new CLabel(CPoint(390, 70), m_pGroupBoxTabAudio, "Envelope shape:");
+
+    m_pAudMixerControl = new CLabel(CPoint(520, 30), m_pGroupBoxTabAudio);
+    m_pAudVolEnvFreq = new CLabel(CPoint(520, 50), m_pGroupBoxTabAudio);
+    m_pAudVolEnvShape = new CLabel(CPoint(520, 70), m_pGroupBoxTabAudio);
+
+    m_pAudToneA->SetReadOnly(true);
+    m_pAudToneB->SetReadOnly(true);
+    m_pAudToneC->SetReadOnly(true);
+    m_pAudNoiseA->SetReadOnly(true);
+    m_pAudNoiseB->SetReadOnly(true);
+    m_pAudNoiseC->SetReadOnly(true);
+
     // ---------------- 'Characters' screen ----------------
     m_pChrLabel = new CLabel(CPoint(10, 10), m_pGroupBoxTabChar, "Work in progress ... Nothing to see here yet, but come back later for charmap.");
     // TODO: A 'Graphics' screen displaying memory as graphics (sprites) with choice of mode (0, 1 or 2), width and start address.
@@ -458,6 +476,94 @@ CapriceDevTools::CapriceDevTools(const CRect& WindowRect, CWindow* pParent, CFon
 }
 
 CapriceDevTools::~CapriceDevTools() = default;
+
+void CapriceDevTools::UnlockRegisters()
+{
+  if (!CPC.paused) {
+    return;
+  }
+  // Ensure registers are up-to-date before unlocking them.
+  UpdateZ80();
+
+  registersLocked = false;
+  m_pZ80ModifyRegisters->SetWindowText("Save & Lock");
+
+  // Only allow to modify registers for which saving is implemented.
+  // The main problem is that a same register is displayed multiple times
+  // (e.g. A in both A and AF) so allowing to modify both leads to the problem
+  // that we don't know which one we should take.
+  m_pZ80RegA->SetReadOnly(false);
+  m_pZ80RegB->SetReadOnly(false);
+  m_pZ80RegC->SetReadOnly(false);
+  m_pZ80RegD->SetReadOnly(false);
+  m_pZ80RegE->SetReadOnly(false);
+  m_pZ80RegH->SetReadOnly(false);
+  m_pZ80RegI->SetReadOnly(false);
+  m_pZ80RegL->SetReadOnly(false);
+  m_pZ80RegR->SetReadOnly(false);
+  m_pZ80RegIX->SetReadOnly(false);
+  m_pZ80RegIY->SetReadOnly(false);
+  m_pZ80RegPC->SetReadOnly(false);
+  m_pZ80RegSP->SetReadOnly(false);
+  m_pZ80RegF->SetReadOnly(false);
+  // TODO: Allow to modify prime registers too.
+}
+
+void CapriceDevTools::LockRegisters()
+{
+  registersLocked = true;
+  m_pZ80ModifyRegisters->SetWindowText("Unlock registers");
+
+  // Only allow to modify registers for which saving is implemented.
+  // The main problem is that a same register is displayed multiple times
+  // (e.g. A in both A and AF) so allowing to modify both leads to the problem
+  // that we don't know which one we should take.
+  m_pZ80RegA->SetReadOnly(true);
+  m_pZ80RegB->SetReadOnly(true);
+  m_pZ80RegC->SetReadOnly(true);
+  m_pZ80RegD->SetReadOnly(true);
+  m_pZ80RegE->SetReadOnly(true);
+  m_pZ80RegH->SetReadOnly(true);
+  m_pZ80RegI->SetReadOnly(true);
+  m_pZ80RegL->SetReadOnly(true);
+  m_pZ80RegR->SetReadOnly(true);
+  m_pZ80RegIX->SetReadOnly(true);
+  m_pZ80RegIY->SetReadOnly(true);
+  m_pZ80RegPC->SetReadOnly(true);
+  m_pZ80RegSP->SetReadOnly(true);
+  m_pZ80RegF->SetReadOnly(true);
+
+  // TODO: Allow to modify individual flags instead of F as a whole.
+  m_pZ80FlagS->SetReadOnly(true);
+  m_pZ80FlagZ->SetReadOnly(true);
+  m_pZ80FlagX1->SetReadOnly(true);
+  m_pZ80FlagH->SetReadOnly(true);
+  m_pZ80FlagX2->SetReadOnly(true);
+  m_pZ80FlagPV->SetReadOnly(true);
+  m_pZ80FlagN->SetReadOnly(true);
+  m_pZ80FlagC->SetReadOnly(true);
+
+  // Update the values that depend on what may have been modified.
+  UpdateZ80();
+}
+
+void CapriceDevTools::SaveRegisters()
+{
+  _A = m_pZ80RegA->GetValue();
+  _B = m_pZ80RegB->GetValue();
+  _C = m_pZ80RegC->GetValue();
+  _D = m_pZ80RegD->GetValue();
+  _E = m_pZ80RegE->GetValue();
+  _F = m_pZ80RegF->GetValue();
+  _H = m_pZ80RegH->GetValue();
+  _I = m_pZ80RegI->GetValue();
+  _L = m_pZ80RegL->GetValue();
+  _R = m_pZ80RegR->GetValue();
+  _IX = m_pZ80RegIXH->GetValue();
+  _IY = m_pZ80RegIYH->GetValue();
+  _PC = m_pZ80RegPC->GetValue();
+  _SP = m_pZ80RegSP->GetValue();
+}
 
 void CapriceDevTools::UpdateDisassemblyPos()
 {
@@ -695,6 +801,10 @@ void CapriceDevTools::UpdateZ80()
     oss << std::hex << std::setw(4) << std::setfill('0') << val
       << " (" << std::dec << val << ")";
     m_pZ80Stack->AddItem(SListItem(oss.str()));
+    if (m_pZ80Stack->Size() >= CPC.devtools_max_stack_size) {
+      m_pZ80Stack->AddItem(SListItem("(...)"));
+      break;
+    }
   }
 }
 
@@ -733,6 +843,13 @@ void CapriceDevTools::UpdateWatchPointsList()
   }
 }
 
+std::string toneString(unsigned short tone) {
+  if (tone == 0) {
+    return "0";
+  }
+  return std::to_string(tone) + " (" + std::to_string(62500/tone)+ " Hz)";
+}
+
 void CapriceDevTools::UpdateMemConfig()
 {
   RAMConfig CurConfig = RAMConfig::CurrentConfig();
@@ -740,6 +857,69 @@ void CapriceDevTools::UpdateMemConfig()
   m_pMemConfigCurHiROM->SetCheckBoxState(CurConfig.HiROMEnabled ? CCheckBox::CHECKED : CCheckBox::UNCHECKED);
   m_pMemConfigCurRAMBank->SetWindowText(std::to_string(CurConfig.RAMBank));
   m_pMemConfigCurRAMConfig->SetWindowText(CurConfig.RAMConfigText());
+}
+
+void CapriceDevTools::UpdateAudio()
+{
+    // TODO(cpitrat): More user friendly display:
+    //  - frequency in Hz on top of internal repr for frequency.
+    // TODO(cpitrat): Make these fields read-only
+    m_pAudFreqA->SetWindowText(toneString(PSG.RegisterAY.TonA));
+    m_pAudFreqB->SetWindowText(toneString(PSG.RegisterAY.TonB));
+    m_pAudFreqC->SetWindowText(toneString(PSG.RegisterAY.TonC));
+    m_pAudFreqNoise->SetWindowText(toneString(PSG.RegisterAY.Noise));
+    m_pAudToneA->SetCheckBoxState(PSG.RegisterAY.Mixer & 1 ? CCheckBox::UNCHECKED : CCheckBox::CHECKED);
+    m_pAudToneB->SetCheckBoxState(PSG.RegisterAY.Mixer & 2 ? CCheckBox::UNCHECKED : CCheckBox::CHECKED);
+    m_pAudToneC->SetCheckBoxState(PSG.RegisterAY.Mixer & 4 ? CCheckBox::UNCHECKED : CCheckBox::CHECKED);
+    m_pAudNoiseA->SetCheckBoxState(PSG.RegisterAY.Mixer & 8 ? CCheckBox::UNCHECKED : CCheckBox::CHECKED);
+    m_pAudNoiseB->SetCheckBoxState(PSG.RegisterAY.Mixer & 16 ? CCheckBox::UNCHECKED : CCheckBox::CHECKED);
+    m_pAudNoiseC->SetCheckBoxState(PSG.RegisterAY.Mixer & 32 ? CCheckBox::UNCHECKED : CCheckBox::CHECKED);
+    m_pAudMixerControl->SetWindowText(std::to_string(PSG.RegisterAY.Mixer));
+    m_pAudVolA->SetWindowText(std::to_string(PSG.RegisterAY.AmplitudeA));
+    m_pAudVolB->SetWindowText(std::to_string(PSG.RegisterAY.AmplitudeB));
+    m_pAudVolC->SetWindowText(std::to_string(PSG.RegisterAY.AmplitudeC));
+    m_pAudVolEnvFreq->SetWindowText(toneString(PSG.RegisterAY.Envelope));
+    auto envtype = std::to_string(PSG.RegisterAY.EnvType);
+    switch (PSG.RegisterAY.EnvType) {
+      case 0:
+      case 1:
+      case 2:
+      case 3:
+      case 9:
+        envtype += " \\_________";
+        break;
+      case 4:
+      case 5:
+      case 6:
+      case 7:
+        envtype += " /_________";
+        break;
+      case 8:
+        envtype += " \\\\\\\\\\\\\\\\\\\\";
+        break;
+      case 10:
+        envtype += " \\/\\/\\/\\/\\/";
+        break;
+      case 11:
+        envtype += " \\'''''''''";
+        break;
+      case 12:
+        envtype += " //////////";
+        break;
+      case 13:
+        envtype += " /'''''''''";
+        break;
+      case 14:
+        envtype += " /\\/\\/\\/\\/\\";
+        break;
+      case 15:
+        envtype += " /_________";
+        break;
+      default:
+        envtype += " (unsupported)";
+        break;
+    }
+    m_pAudVolEnvShape->SetWindowText(envtype);
 }
 
 void CapriceDevTools::PrepareMemBankConfig()
@@ -875,28 +1055,21 @@ void CapriceDevTools::UpdateTextMemory()
 
 void CapriceDevTools::PauseExecution()
 {
+  if (!CPC.paused) {
+    // Update all before pausing to be sure that the state is consistent.
+    // This is particularly important for Z80 as the registers need to be
+    // up-to-date otherwise we'll mess with the state when we resume.
+    UpdateAll();
+  }
   CPC.paused = true;
   m_pButtonPause->SetWindowText("Resume");
 }
 
 void CapriceDevTools::ResumeExecution()
 {
+  LockRegisters();
   CPC.paused = false;
   m_pButtonPause->SetWindowText("Pause");
-  _A = m_pZ80RegA->GetValue();
-  _B = m_pZ80RegB->GetValue();
-  _C = m_pZ80RegC->GetValue();
-  _D = m_pZ80RegD->GetValue();
-  _E = m_pZ80RegE->GetValue();
-  _F = m_pZ80RegF->GetValue();
-  _H = m_pZ80RegH->GetValue();
-  _I = m_pZ80RegI->GetValue();
-  _L = m_pZ80RegL->GetValue();
-  _R = m_pZ80RegR->GetValue();
-  _IX = m_pZ80RegIXH->GetValue();
-  _IY = m_pZ80RegIYH->GetValue();
-  _PC = m_pZ80RegPC->GetValue();
-  _SP = m_pZ80RegSP->GetValue();
 }
 
 void CapriceDevTools::LoadSymbols(const std::string& filename)
@@ -963,6 +1136,7 @@ void CapriceDevTools::PreUpdate()
                  break;
                }
       case 4 : { // 'Audio'
+                 UpdateAudio();
                  break;
                }
       case 5 : { // 'Characters'
@@ -990,6 +1164,7 @@ void CapriceDevTools::UpdateAll()
     UpdateDisassemblyPos();
     UpdateTextMemory();
     UpdateWatchPointsList();
+    UpdateAudio();
 }
 
 bool CapriceDevTools::HandleMessage(CMessage* pMessage)
@@ -1040,6 +1215,14 @@ bool CapriceDevTools::HandleMessage(CMessage* pMessage)
               z80.step_out_addresses.clear();
               ResumeExecution();
               break;
+            }
+          }
+          if (pMessage->Source() == m_pZ80ModifyRegisters) {
+            if (registersLocked) {
+              UnlockRegisters();
+            } else {
+              SaveRegisters();
+              LockRegisters();
             }
           }
           if (pMessage->Destination() == m_pGroupBoxTabAsm) {

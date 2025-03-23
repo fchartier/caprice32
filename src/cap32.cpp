@@ -114,7 +114,7 @@ byte *pbROMhi = nullptr;
 byte *pbExpansionROM = nullptr;
 byte *pbMF2ROMbackup = nullptr;
 byte *pbMF2ROM = nullptr;
-byte *pbTapeImage = nullptr;
+std::vector<byte> pbTapeImage;
 byte keyboard_matrix[16];
 
 std::list<SDL_Event> virtualKeyboardEvents;
@@ -142,8 +142,8 @@ dword freq_table[MAX_FREQ_ENTRIES] = {
 
 #include "font.h"
 
-void set_osd_message(const std::string& message) {
-   osd_timing = SDL_GetTicks() + 1000;
+void set_osd_message(const std::string& message, uint32_t for_milliseconds) {
+   osd_timing = SDL_GetTicks() + for_milliseconds;
    osd_message = " " + message;
 }
 
@@ -214,6 +214,14 @@ std::string chROMFile[4] = {
    "cpc6128.rom",
    "system.cpr"
 };
+
+t_CPC::t_CPC() {
+  driveA.drive = DRIVE::DSK_A;
+  driveB.drive = DRIVE::DSK_B;
+  tape.drive = DRIVE::TAPE;
+  cartridge.drive = DRIVE::CARTRIDGE;
+  snapshot.drive = DRIVE::SNAPSHOT;
+}
 
 t_CPC CPC;
 t_CRTC CRTC;
@@ -1008,7 +1016,7 @@ int emulator_patch_ROM ()
             pbPtr += 0x1eef; // location of the keyboard translation table
             break;
          case 3: // 6128+
-            if(CPC.cart_file == CPC.rom_path + "/" + chROMFile[3]) { // Only patch system cartridge - we don't want to break another one by messing with it
+            if(CPC.cartridge.file == CPC.rom_path + "/" + chROMFile[3]) { // Only patch system cartridge - we don't want to break another one by messing with it
                pbPtr += 0x1eef; // location of the keyboard translation table
             }
             break;
@@ -1322,8 +1330,13 @@ void printer_stop ()
 
 void audio_update (void *userdata __attribute__((unused)), byte *stream, int len)
 {
-   memcpy(stream, pbSndBuffer.get(), len);
-   dwSndBufferCopied = 1;
+  if (CPC.snd_ready) {
+    //LOG_VERBOSE("Audio: audio_update: copying " << len << " bytes");
+    memcpy(stream, pbSndBuffer.get(), len);
+    dwSndBufferCopied = 1;
+  } else {
+    LOG_VERBOSE("Audio: audio_update: skipping the copy of " << len << " bytes: sound buffer not ready");
+  }
 }
 
 
@@ -1348,16 +1361,18 @@ int audio_init ()
       return 0;
    }
 
+   CPC.snd_ready = false;
+
+   for (int i = 0; i < SDL_GetNumAudioDevices(0); i++) {
+      LOG_VERBOSE("Audio: device " << i << ": " << SDL_GetAudioDeviceName(i, 0));
+   }
+
    desired.freq = freq_table[CPC.snd_playback_rate];
    desired.format = CPC.snd_bits ? AUDIO_S16LSB : AUDIO_S8;
    desired.channels = CPC.snd_stereo+1;
    desired.samples = audio_align_samples(desired.freq * FRAME_PERIOD_MS / 1000);
    desired.callback = audio_update;
    desired.userdata = nullptr;
-
-   for (int i = 0; i < SDL_GetNumAudioDevices(0); i++) {
-      LOG_VERBOSE("Audio: device " << i << ": " << SDL_GetAudioDeviceName(i, 0));
-   }
 
    audio_device_id = SDL_OpenAudioDevice(nullptr, 0, &desired, &obtained, 0 /* no change allowed */);
    if (audio_device_id == 0) {
@@ -1366,14 +1381,16 @@ int audio_init ()
    }
    SDL_PauseAudioDevice(audio_device_id, 0);
 
-   LOG_VERBOSE("Audio: Desired: Freq: " << desired.freq << ", Format: " << desired.format << ", Channels: " << desired.channels << ", Samples: " << desired.samples);
-   LOG_VERBOSE("Audio: Obtained: Freq: " << obtained.freq << ", Format: " << obtained.format << ", Channels: " << obtained.channels << ", Samples: " << obtained.samples);
+   LOG_VERBOSE("Audio: Desired: Freq: " << desired.freq << ", Format: " << desired.format << ", Channels: " << static_cast<int>(desired.channels) << ", Samples: " << desired.samples << ", Size: " << desired.size);
+   LOG_VERBOSE("Audio: Obtained: Freq: " << obtained.freq << ", Format: " << obtained.format << ", Channels: " << static_cast<int>(obtained.channels) << ", Samples: " << obtained.samples << ", Size: " << obtained.size);
 
    CPC.snd_buffersize = obtained.size; // size is samples * channels * bytes per sample (1 or 2)
    pbSndBuffer = std::make_unique<byte[]>(CPC.snd_buffersize); // allocate the sound data buffer
    pbSndBufferEnd = pbSndBuffer.get() + CPC.snd_buffersize;
    memset(pbSndBuffer.get(), 0, CPC.snd_buffersize);
    CPC.snd_bufferptr = pbSndBuffer.get(); // init write cursor
+   CPC.snd_ready = true;
+   LOG_VERBOSE("Audio: Sound buffer ready");
 
    InitAY();
 
@@ -1768,6 +1785,7 @@ void loadConfiguration (t_CPC &CPC, const std::string& configFilename)
    CPC.resources_path = conf.getStringValue("system", "resources_path", appPath + "/resources");
 
    CPC.devtools_scale = conf.getIntValue("devtools", "scale", 1);
+   CPC.devtools_max_stack_size = conf.getIntValue("devtools", "max_stack_size", 50);
 
    CPC.scr_scale = conf.getIntValue("video", "scr_scale", 2);
    CPC.scr_preserve_aspect_ratio = conf.getIntValue("video", "scr_preserve_aspect_ratio", 1);
@@ -1840,7 +1858,7 @@ void loadConfiguration (t_CPC &CPC, const std::string& configFilename)
    }
    CPC.rom_mf2 = conf.getStringValue("rom", "rom_mf2", "");
 
-   CPC.cart_file = CPC.rom_path + "/system.cpr"; // Only default path defined. Needed for CPC6128+
+   CPC.cartridge.file = CPC.rom_path + "/system.cpr"; // Only default path defined. Needed for CPC6128+
 }
 
 
@@ -2879,7 +2897,7 @@ int cap32_main (int argc, char **argv)
                         case CAP32_TAPEPLAY:
                            LOG_VERBOSE("Request to play tape");
                            Tape_Rewind();
-                           if (pbTapeImage) {
+                           if (!pbTapeImage.empty()) {
                               if (CPC.tape_play_button) {
                                  LOG_VERBOSE("Play button released");
                                  CPC.tape_play_button = 0;
@@ -2968,6 +2986,11 @@ int cap32_main (int argc, char **argv)
                            }
                            #endif
                            set_osd_message(std::string("Debug mode: ") + (log_verbose ? "on" : "off"));
+                           break;
+
+                        case CAP32_NEXTDISKA:
+                           CPC.driveA.zip_index += 1;
+                           file_load(CPC.driveA);
                            break;
                      }
                   }

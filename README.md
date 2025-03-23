@@ -3,21 +3,19 @@
 
 (c) Copyright 1997-2015 Ulrich Doewich
 
-(c) Copyright 2016-2021 Colin Pitrat
+(c) Copyright 2016-2025 Colin Pitrat
 
 https://github.com/ColinPitrat/caprice32
 
-Linux build: [![Linux build Status](https://github.com/ColinPitrat/caprice32/actions/workflows/linux.yml/badge.svg)](https://github.com/ColinPitrat/caprice32/actions/workflows/linux.yml)
+Linux build: [![Linux build Status](https://github.com/ColinPitrat/caprice32/actions/workflows/linux.yml/badge.svg?branch=master)](https://github.com/ColinPitrat/caprice32/actions/workflows/linux.yml)
 
-Windows build: [![Windows build Status](https://github.com/ColinPitrat/caprice32/actions/workflows/windows.yml/badge.svg)](https://github.com/ColinPitrat/caprice32/actions/workflows/windows.yml)
+Windows build: [![Windows build Status](https://github.com/ColinPitrat/caprice32/actions/workflows/windows.yml/badge.svg?branch=latest)](https://github.com/ColinPitrat/caprice32/actions/workflows/windows.yml)
 
-Windows release: [![Windows release status](https://ci.appveyor.com/api/projects/status/h795wt2xlttaj6sk?svg=true)](https://ci.appveyor.com/project/ColinPitrat/caprice32)
-
-MacOS build: [![MacOS build status](https://github.com/ColinPitrat/caprice32/actions/workflows/macos.yml/badge.svg)](https://github.com/ColinPitrat/caprice32/actions/workflows/macos.yml)
+MacOS build: [![MacOS build status](https://github.com/ColinPitrat/caprice32/actions/workflows/macos.yml/badge.svg?branch=latest)](https://github.com/ColinPitrat/caprice32/actions/workflows/macos.yml)
 
 # What is it ?
 
-Caprice32 is a software emulator of the Amstrad CPC 8bit home computer series running on Linux and Windows. The emulator faithfully imitates the CPC464, CPC664, and CPC6128 models. By recreating the operations of all hardware components at a low level, the emulator achieves a high degree of compatibility with original CPC software. These programs or games can be run unmodified at real-time or higher speeds, depending on the emulator host environment.
+Caprice32 is a software emulator of the Amstrad CPC 8-bit home computer series running on Linux, macOS and Windows. The emulator faithfully imitates the CPC464, CPC664, and CPC6128 models. By recreating the operations of all hardware components at a low level, the emulator achieves a high degree of compatibility with original CPC software. These programs or games can be run unmodified at real-time or higher speeds, depending on the emulator host environment.
 
 # Features
 
@@ -27,7 +25,7 @@ Caprice32 provides:
   * Joystick support - it can be fully used with joystick only, thanks to an integrated virtual keyboard.
   * Joystick emulation - joystick-only games can be played using the keyboard
   * English, French or Spanish keyboards
-  * DSK and [IPF](http://softpres.org/glossary:ipf) files for disks - VOC and CDT files for tapes - CPR files for cartridge
+  * DSK, [IPF](http://softpres.org/glossary:ipf) and CT-RAW files for disks - VOC and CDT files for tapes - CPR files for cartridge
   * Snapshots (SNA files)
   * Direct load of ZIP files
   * Developers' tools with debugger, memory editor, disassembler...
@@ -38,6 +36,10 @@ Caprice32 provides:
 You see something missing ? Do not hesitate to open an issue to suggest it.
 
 # Installation
+
+## macOS
+
+See the [INSTALL.md](INSTALL.md)
 
 ## Linux
 

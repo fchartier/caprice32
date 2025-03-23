@@ -1,6 +1,11 @@
 name: Linux build
 
-on: [push]
+on:
+  push:
+    branches:
+      - '**'
+    tags-ignore:
+      - latest
 
 jobs:
   linux-build:
@@ -11,12 +16,9 @@ jobs:
       - uses: actions/checkout@v2
       - run: sudo apt-get update
       - run: sudo apt-get install pkg-config libsdl2-dev libfreetype6-dev zlib1g-dev libpng-dev devscripts
-      - run: wget http://softpres.org/_media/files:ipflib42_linux-x86_64.tar.gz -O /tmp/ipflib42_linux-x86_64.tar.gz
-      - run: tar -xf /tmp/ipflib42_linux-x86_64.tar.gz 2>&1 >/dev/null
-      - run: sudo cp -r x86_64-linux-gnu-capsimage/include/caps /usr/include
 
-      - run: make -j 3 WITH_IPF=true
-      - run: make -j 3 WITH_IPF=true unit_test
+      - run: make -j 3
+      - run: make -j 3 unit_test
       - run: make -j 3 e2e_test
 
       - run: make -j 3 clean
@@ -41,15 +43,25 @@ jobs:
       # https://docs.github.com/en/github/authenticating-to-github/creating-a-personal-access-token
       # And then to create the secret containing it, see:
       # https://docs.github.com/en/actions/reference/encrypted-secrets#creating-encrypted-secrets-for-a-repository
-      - if: github.ref_name == 'master'
-        uses: dev-drprasad/delete-tag-and-release@v1.1
-        with:
-          delete_release: false
-          tag_name: "latest"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - uses: tvdias/github-tagger@v0.0.1
+      #
+      ## Unfortunately we have to delete the release as otherwise draft releases pile-up.
+      ## I really don't like it because this means the latest release disappears on each push on master.
+      #- if: github.ref_name == 'master'
+      #  uses: dev-drprasad/delete-tag-and-release@v1.1
+      #  with:
+      #    delete_release: true
+      #    tag_name: "latest"
+      #  env:
+      #    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ## This one requires the tag to be deleted before creating it
+      #- uses: tvdias/github-tagger@v0.0.1
+      #  if: github.ref_name == 'master'
+      #  with:
+      #    tag: latest
+      #    repo-token: ${{ secrets.LATEST_TOKEN }}
+      - uses: richardsimko/update-tag@v1
         if: github.ref_name == 'master'
         with:
-          tag: latest
-          repo-token: ${{ secrets.LATEST_TOKEN }}
+          tag_name: latest
+        env:
+          GITHUB_TOKEN: ${{ secrets.LATEST_TOKEN }}

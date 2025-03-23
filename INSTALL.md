@@ -10,7 +10,7 @@ You will need the following to successfully compile an executable:
 
 # Compiling
 
-### Linux target:
+### Linux/macOS target:
 
 To build with default options, use :
 
@@ -20,7 +20,6 @@ The following options are available:
 
  * `DEBUG=TRUE`
  * `WITHOUT_GL=TRUE`
- * `WITH_IPF=TRUE`
  * `ARCH=(win32|win64|linux)`
 
 For example, for a linux debug build, use:
@@ -30,6 +29,36 @@ For example, for a linux debug build, use:
 Alternatively, the debug target also work:
 
 `make debug`
+
+### How to compile on macOS
+
+This was tested for macOS Sequoia 15.1.
+
+You will need SDL installed. Install brew if you don't have it. Then:
+
+`brew install SDL`
+
+Use make to build:
+
+`make`
+
+After a while you will get the executable.
+
+The usual way to organize disk/tape/cartridge images and snapshots is to create directories `disk`, `tape`, `cart` and `snap`:
+
+`mkdir disk tape cart snap`
+
+Start the emulator with:
+
+`./cap32`
+
+or
+
+`./cap32 <file>`
+
+where `file` can be a `.dsk`, `.voc`, `.cdt`, `.cpr`, `.sna` or a `.zip` containing one of these files.
+
+See "Using the emulator" below for information on how to use Caprice.
 
 ### Troubleshooting
 
@@ -167,7 +196,6 @@ Adjust the win64 part in the makefile.
 ifeq ($(ARCH),win64)
 TRIPLE = x86_64-w64-mingw32
 PLATFORM=windows
-CAPSIPFDLL=CAPSImg_x64.dll
 MINGW_PATH = /mingw64
 ```
 
@@ -208,13 +236,7 @@ If you want to build the 32 bit version you need to adjust the MINGW_PATH in the
 `pacman -S mingw-w64-i686-gcc`
 
 
-# IPF support
-
-Caprice32 supports IPF file format (http://www.softpres.org/).
-To enable it, you need to first download the proper package from http://softpres.org/download (under "User Distribution").
-You need version 4.2 at least.
-
-#### On Linux
+#### On Linux/macOS
 
 Unpack the package and copy the library and headers in a place where they will be found by the compilation.
 Typically:
@@ -231,15 +253,28 @@ sudo chmod a-x /usr/include/caps/* /usr/lib/libcapsimage.so*
 sudo chmod a+r /usr/include/caps /usr/include/caps/* /usr/lib/libcapsimage.so*
 ```
 
-Then build Caprice with WITH_IPF:
-
-`make WITH_IPF=true`
-
-You can then run an IPF file as you would do for a DSK file:
-
-`./cap32 disk.ipf`
-
 #### On Windows
 
-The windows builds available in releases include IPF support.
+# Using the emulator
+
+F1 provides the emulator's main menu. The `About` section contains a list of shortcuts.
+
+To get a list of supported command line flags:
+`cap32 --help` 
+
+These flags can be useful to automate things.
+
+Once in the emulator, you can type F1 and then "Load/Save" to:
+ - Load an image of a disk, tape, cartridge
+ - Load an emulator state from a snapshot
+ - Insert a new (empty) disk
+ - Save a disk
+ - Save the emulator's state in a snapshot
+
+By default, Caprice uses CPC 6128 which is on disk by default. To see what's on a disk loaded in drive A, type `cat`.
+
+To start a program, type `run"program`.
+
+You can find more details on the web. CPCWiki is full of nice resources, in particular the user manual which is a good start:
+https://www.cpcwiki.eu/index.php/User_Manual
 
